@@ -7,13 +7,14 @@ import { FaEdit, FaCheckCircle, FaReply, FaTrash, FaUserPlus, FaUser, FaCalendar
 import { TicketContext } from '../../contexts/TicketContext'
 import { AuthContext } from '../../contexts/AuthContext'
 import Loader from '../common/Loader'
+import { formatFileSize } from '../../utils/helpers';
 
 const TicketDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { getTicketById, updateTicket, addComment, changeStatus, assignTicket } = useContext(TicketContext)
-  const { user } = useContext(AuthContext)
+  const { getTicketById, updateTicket, addComment, changeStatus, assignTicket } = useContext(TicketContext);
+  const { user } = useContext(AuthContext);
 
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -24,6 +25,68 @@ const TicketDetail = () => {
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [newStatus, setNewStatus] = useState('')
   const [statusComment, setStatusComment] = useState('')
+
+  const [newFile, setNewFile] = useState(null);
+  const [fileUploadError, setFileUploadError] = useState(null);
+
+  // Метод для добавления файла
+  const handleFileUpload = async () => {
+    if (!newFile) return;
+
+    try {
+      setLoading(true);
+      setFileUploadError(null);
+
+      // В реальном приложении здесь будет загрузка файла на сервер
+      // Например, используя FormData и axios
+
+      // Имитация добавления файла
+      const fileData = {
+        name: newFile.name,
+        size: newFile.size,
+        type: newFile.type,
+        uploadedAt: new Date().toISOString()
+      };
+
+      // Добавляем файл к заявке
+      const updatedTicket = await updateTicket(ticket.id, {
+        ...ticket,
+        attachments: [...(ticket.attachments || []), fileData]
+      });
+
+      setTicket(updatedTicket);
+      setNewFile(null);
+      setSuccess('Файл успешно прикреплен');
+    } catch (err) {
+      setFileUploadError(err.message || 'Ошибка загрузки файла');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteFile = async (file) => {
+    try {
+      setLoading(true);
+
+      // Создаем новый массив вложений без удаляемого файла
+      const updatedAttachments = ticket.attachments.filter(
+        attachment => attachment.name !== file.name || attachment.uploadedAt !== file.uploadedAt
+      );
+
+      // Обновляем заявку
+      const updatedTicket = await updateTicket(ticket.id, {
+        ...ticket,
+        attachments: updatedAttachments
+      });
+
+      setTicket(updatedTicket);
+      setSuccess('Файл успешно удален');
+    } catch (err) {
+      setError(err.message || 'Ошибка удаления файла');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Разрешено ли пользователю редактировать заявку
   const canEdit = user && (
@@ -76,10 +139,24 @@ const TicketDetail = () => {
 
     try {
       setLoading(true)
-      await addComment(ticket.id, comment)
+      setError(null)
 
-      // Обновляем данные заявки после добавления комментария
-      const updatedTicket = await getTicketById(id)
+      // Добавляем комментарий
+      const newComment = {
+        text: comment,
+        createdBy: {
+          id: user.id,
+          name: user.name
+        },
+        createdAt: new Date().toISOString()
+      }
+
+      // Обновляем заявку с новым комментарием
+      const updatedTicket = await updateTicket(ticket.id, {
+        ...ticket,
+        comments: [...ticket.comments, newComment]
+      })
+
       setTicket(updatedTicket)
       setComment('')
       setSuccess('Комментарий добавлен')
@@ -433,6 +510,12 @@ const TicketDetail = () => {
               <h5 className="mb-0">Прикрепленные файлы</h5>
             </Card.Header>
             <Card.Body>
+              {fileUploadError && (
+                <Alert variant="danger" onClose={() => setFileUploadError(null)} dismissible>
+                  {fileUploadError}
+                </Alert>
+              )}
+
               {ticket.attachments?.length === 0 ? (
                 <div className="text-center py-4 text-muted">
                   <p>Нет прикрепленных файлов</p>
@@ -442,10 +525,26 @@ const TicketDetail = () => {
                   {ticket.attachments?.map((file, index) => (
                     <ListGroup.Item key={index} className="py-3">
                       <div className="d-flex justify-content-between align-items-center">
-                        <div>{file.name}</div>
-                        <Button variant="outline-primary" size="sm">
-                          Скачать
-                        </Button>
+                        <div>
+                          <div>{file.name}</div>
+                          <small className="text-muted">
+                            {formatFileSize(file.size)} • Загружен: {formatDate(file.uploadedAt)}
+                          </small>
+                        </div>
+                        <div>
+                          <Button variant="outline-primary" size="sm" className="me-2">
+                            Скачать
+                          </Button>
+                          {canEdit && (
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              onClick={() => handleDeleteFile(file)}
+                            >
+                              Удалить
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </ListGroup.Item>
                   ))}
@@ -453,12 +552,48 @@ const TicketDetail = () => {
               )}
             </Card.Body>
             <Card.Footer className="bg-white">
-              <Button variant="outline-primary" disabled>
-                Прикрепить файл
-              </Button>
+              {canEdit && (
+                <>
+                  {!newFile ? (
+                    <Form.Group>
+                      <Form.Label>Прикрепить файл</Form.Label>
+                      <Form.Control
+                        type="file"
+                        onChange={(e) => setNewFile(e.target.files[0])}
+                      />
+                      <Form.Text className="text-muted">
+                        Максимальный размер файла: 150 МБ
+                      </Form.Text>
+                    </Form.Group>
+                  ) : (
+                    <div className="mb-3">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <div className="text-truncate">{newFile.name}</div>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={() => setNewFile(null)}
+                        >
+                          <FaTrash />
+                        </Button>
+                      </div>
+                      <div className="d-flex">
+                        <Button
+                          variant="primary"
+                          className="w-100"
+                          disabled={loading}
+                          onClick={handleFileUpload}
+                        >
+                          {loading ? 'Загрузка...' : 'Прикрепить файл'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </Card.Footer>
           </Card>
-
+          {/* Комментарии к заявке */}
           {/* История изменений */}
           <Card className="shadow-sm">
             <Card.Header className="bg-light">

@@ -8,6 +8,10 @@ import LoginPage from './pages/LoginPage'
 import TicketsPage from './pages/TicketsPage'
 import CreateTicketPage from './pages/CreateTicketPage'
 import TicketDetailPage from './pages/TicketDetailPage'
+import EditTicketPage from './pages/EditTicketPage'
+import DashboardPage from './pages/DashboardPage'
+import ReportsPage from './pages/ReportsPage'
+import SettingsPage from './pages/SettingsPage'
 
 function App() {
   return (
@@ -21,6 +25,10 @@ function App() {
               <Route path="tickets" element={<TicketsPage />} />
               <Route path="tickets/create" element={<CreateTicketPage />} />
               <Route path="tickets/:id" element={<TicketDetailPage />} />
+              <Route path="tickets/:id/edit" element={<EditTicketPage />} /> {/* Новый маршрут */}
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
 
             {/* Публичные маршруты */}
@@ -33,5 +41,4 @@ function App() {
     </AuthProvider>
   )
 }
-
 export default App

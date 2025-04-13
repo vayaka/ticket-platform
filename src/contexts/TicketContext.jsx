@@ -137,6 +137,153 @@ export const TicketProvider = ({ children }) => {
     }
   }
 
+  const assignTicket = async (ticketId, userId, userName) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Получаем текущую заявку
+      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+
+      if (!ticket) {
+        throw new Error('Заявка не найдена');
+      }
+
+      // Обновляем заявку с новым исполнителем
+      const updatedTicket = {
+        ...ticket,
+        assignedTo: { id: userId, name: userName },
+        status: ticket.status === 'new' ? 'assigned' : ticket.status,
+        updatedAt: new Date().toISOString()
+      };
+
+      // В реальном приложении здесь был бы API-запрос
+      const result = await ticketService.assignTicket(ticketId, userId, userName);
+
+      // Обновляем состояние
+      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
+
+      // Применяем фильтры
+      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
+
+      return updatedTicket;
+    } catch (err) {
+      setError(err.message || 'Ошибка назначения исполнителя');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeStatus = async (ticketId, status, comment = '') => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Получаем текущую заявку
+      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+
+      if (!ticket) {
+        throw new Error('Заявка не найдена');
+      }
+
+      // Обновляем заявку с новым статусом
+      const updatedTicket = {
+        ...ticket,
+        status,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Если есть комментарий, добавляем его
+      if (comment) {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const newComment = {
+          id: (ticket.comments && ticket.comments.length > 0)
+            ? Math.max(...ticket.comments.map(c => c.id)) + 1
+            : 1,
+          text: comment,
+          createdBy: {
+            id: user.id || 1,
+            name: user.name || 'Пользователь'
+          },
+          createdAt: new Date().toISOString()
+        };
+
+        updatedTicket.comments = [...(ticket.comments || []), newComment];
+      }
+
+      // В реальном приложении здесь был бы API-запрос
+      const result = await ticketService.changeStatus(ticketId, status, comment);
+
+      // Обновляем состояние
+      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
+
+      // Применяем фильтры
+      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
+
+      return updatedTicket;
+    } catch (err) {
+      setError(err.message || 'Ошибка изменения статуса');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Добавим функцию addComment
+  const addComment = async (ticketId, text) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Получаем текущую заявку
+      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+
+      if (!ticket) {
+        throw new Error('Заявка не найдена');
+      }
+
+      // Получаем данные пользователя
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+      // Создаем новый комментарий
+      const newComment = {
+        id: (ticket.comments && ticket.comments.length > 0)
+          ? Math.max(...ticket.comments.map(c => c.id)) + 1
+          : 1,
+        text,
+        createdBy: {
+          id: user.id || 1,
+          name: user.name || 'Пользователь'
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      // Обновляем заявку с новым комментарием
+      const updatedTicket = {
+        ...ticket,
+        comments: [...(ticket.comments || []), newComment],
+        updatedAt: new Date().toISOString()
+      };
+
+      // В реальном приложении здесь был бы API-запрос
+      const result = await ticketService.addComment(ticketId, text);
+
+      // Обновляем состояние
+      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
+
+      // Применяем фильтры
+      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
+
+      return newComment;
+    } catch (err) {
+      setError(err.message || 'Ошибка добавления комментария');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const value = {
     tickets: filteredTickets,
     allTickets: tickets,
@@ -149,6 +296,9 @@ export const TicketProvider = ({ children }) => {
     getTicketById,
     updateTicket,
     deleteTicket,
+    addComment,     // Добавили
+    changeStatus,   // Добавили
+    assignTicket,
   }
 
   return <TicketContext.Provider value={value}>{children}</TicketContext.Provider>

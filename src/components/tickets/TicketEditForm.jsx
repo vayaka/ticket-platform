@@ -1,11 +1,11 @@
-// src/components/tickets/TicketForm.jsx
-import { useState, useContext } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useContext } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Form, Button, Card, Alert, Row, Col } from 'react-bootstrap'
 import { Formik } from 'formik'
 import * as Yup from 'yup'
 import { TicketContext } from '../../contexts/TicketContext'
 import FileUploader from '../common/FileUploader'
+import Loader from '../common/Loader'
 
 // Схема валидации формы
 const validationSchema = Yup.object().shape({
@@ -24,60 +24,92 @@ const validationSchema = Yup.object().shape({
     .required('Выберите отдел'),
 })
 
-const TicketForm = () => {
+const TicketEditForm = () => {
+  const { id } = useParams()
   const navigate = useNavigate()
-  const { createTicket } = useContext(TicketContext)
+  const { getTicketById, updateTicket } = useContext(TicketContext)
   const [error, setError] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [ticket, setTicket] = useState(null)
   const [selectedFile, setSelectedFile] = useState(null)
 
-  // Начальные значения формы
-  const initialValues = {
-    title: '',
-    description: '',
-    category: 'hardware',
-    priority: 'medium',
-    department: 'IT',
-  }
+  // Загрузка данных заявки
+  useEffect(() => {
+    const loadTicket = async () => {
+      try {
+        setLoading(true)
+        const ticketData = await getTicketById(id)
+        setTicket(ticketData)
+      } catch (err) {
+        setError(err.message || 'Ошибка загрузки заявки')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadTicket()
+  }, [id, getTicketById])
 
   // Обработка отправки формы
-  const handleSubmit = async (values, { resetForm }) => {
+  const handleSubmit = async (values, { setSubmitting }) => {
     try {
       setIsSubmitting(true)
       setError(null)
 
-      // Подготавливаем данные заявки
+      // Подготавливаем данные для обновления
       const ticketData = {
         ...values,
+        // Если есть новый файл, используем его, иначе - оставляем существующий
         attachments: selectedFile
-          ? [{
+          ? [...(ticket.attachments || []), {
               name: selectedFile.name,
               size: selectedFile.size,
               type: selectedFile.type,
               uploadedAt: new Date().toISOString()
             }]
-          : []
+          : ticket.attachments
       }
 
-      const newTicket = await createTicket(ticketData)
-      resetForm()
-      setSelectedFile(null)
+      const updatedTicket = await updateTicket(id, ticketData)
 
-      // Перенаправляем на страницу созданной заявки
-      navigate(`/tickets/${newTicket.id}`, {
-        state: { success: true, message: 'Заявка успешно создана' }
+      // Перенаправляем на страницу заявки
+      navigate(`/tickets/${updatedTicket.id}`, {
+        state: { success: true, message: 'Заявка успешно обновлена' }
       })
     } catch (err) {
-      setError(err.message || 'Произошла ошибка при создании заявки')
+      setError(err.message || 'Произошла ошибка при обновлении заявки')
     } finally {
       setIsSubmitting(false)
+      setSubmitting(false)
     }
+  }
+
+  if (loading) {
+    return <Loader />
+  }
+
+  if (!ticket) {
+    return (
+      <Alert variant="danger">
+        Заявка не найдена или произошла ошибка при загрузке
+      </Alert>
+    )
+  }
+
+  // Начальные значения формы
+  const initialValues = {
+    title: ticket.title || '',
+    description: ticket.description || '',
+    category: ticket.category || 'hardware',
+    priority: ticket.priority || 'medium',
+    department: ticket.department || 'IT',
   }
 
   return (
     <Card className="shadow-sm">
       <Card.Header as="h5" className="bg-primary text-white">
-        Создание новой заявки
+        Редактирование заявки
       </Card.Header>
       <Card.Body>
         {error && <Alert variant="danger">{error}</Alert>}
@@ -106,7 +138,6 @@ const TicketForm = () => {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   isInvalid={touched.title && !!errors.title}
-                  placeholder="Например, Поломка принтера"
                 />
                 <Form.Control.Feedback type="invalid">
                   {errors.title}
@@ -122,7 +153,6 @@ const TicketForm = () => {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   isInvalid={touched.description && !!errors.description}
-                  placeholder="Опишите проблему подробно..."
                   rows={4}
                 />
                 <Form.Control.Feedback type="invalid">
@@ -200,10 +230,25 @@ const TicketForm = () => {
                 />
               </Form.Group>
 
+              {/* Отображение текущих прикрепленных файлов */}
+              {ticket.attachments && ticket.attachments.length > 0 && (
+                <Form.Group className="mb-3">
+                  <Form.Label>Прикрепленные файлы</Form.Label>
+                  <div className="list-group">
+                    {ticket.attachments.map((file, index) => (
+                      <div key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                        <div>{file.name}</div>
+                        <Button variant="outline-danger" size="sm">Удалить</Button>
+                      </div>
+                    ))}
+                  </div>
+                </Form.Group>
+              )}
+
               <div className="d-flex justify-content-end gap-2 mt-4">
                 <Button
                   variant="secondary"
-                  onClick={() => navigate('/tickets')}
+                  onClick={() => navigate(`/tickets/${id}`)}
                 >
                   Отмена
                 </Button>
@@ -212,7 +257,7 @@ const TicketForm = () => {
                   variant="primary"
                   disabled={isSubmitting || !isValid}
                 >
-                  {isSubmitting ? 'Создание...' : 'Создать заявку'}
+                  {isSubmitting ? 'Сохранение...' : 'Сохранить изменения'}
                 </Button>
               </div>
             </Form>
@@ -223,4 +268,4 @@ const TicketForm = () => {
   )
 }
 
-export default TicketForm
+export default TicketEditForm
