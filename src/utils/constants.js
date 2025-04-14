@@ -25,6 +25,7 @@ export const TICKET_CATEGORIES = {
   HARDWARE: 'hardware',
   SOFTWARE: 'software',
   NETWORK: 'network',
+  MAINTENANCE: 'maintenance',
   OTHER: 'other',
 }
 
@@ -74,6 +75,7 @@ export const TICKET_CATEGORY_NAMES = {
   [TICKET_CATEGORIES.HARDWARE]: 'Оборудование',
   [TICKET_CATEGORIES.SOFTWARE]: 'Программное обеспечение',
   [TICKET_CATEGORIES.NETWORK]: 'Сеть',
+  [TICKET_CATEGORIES.MAINTENANCE]: 'Техническое обслуживание',
   [TICKET_CATEGORIES.OTHER]: 'Другое',
 }
 

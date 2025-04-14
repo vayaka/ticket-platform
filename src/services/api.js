@@ -2,18 +2,33 @@ import axios from 'axios'
 
 // Создаем экземпляр axios с предустановленными настройками
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: 'http://localhost:5000/api',
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // Добавляем таймаут для запросов
 })
 
 // Перехватчик для добавления токена к запросам
 api.interceptors.request.use(
   (config) => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    if (user.token) {
-      config.headers.Authorization = `Bearer ${user.token}`
+    const user = localStorage.getItem('user')
+
+    // Добавьте лог для отладки
+    console.log('Токен из localStorage:', user ? JSON.parse(user).token : 'не найден')
+
+    if (user) {
+      try {
+        const userData = JSON.parse(user)
+        if (userData.token) {
+          config.headers.Authorization = `Bearer ${userData.token}`
+
+          // Проверьте заголовок Authorization
+          console.log('Заголовок Authorization:', config.headers.Authorization)
+        }
+      } catch (error) {
+        console.error('Ошибка при чтении данных пользователя:', error)
+      }
     }
     return config
   },
@@ -24,19 +39,29 @@ api.interceptors.request.use(
 
 // Перехватчик для обработки ошибок ответа
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    // Возвращаем непосредственно данные ответа
+    return response.data
+  },
   (error) => {
-    const { response } = error
+    // Обрабатываем случай, когда запрос не прошел
+    if (!error.response) {
+      console.error('Сетевая ошибка, сервер недоступен')
+      return Promise.reject(new Error('Сервер недоступен, проверьте подключение'))
+    }
 
     // Если ошибка 401 (неавторизован), выход из системы
-    if (response && response.status === 401) {
+    if (error.response && error.response.status === 401) {
       localStorage.removeItem('user')
-      window.location.href = '/auth/login'
+      // Используем мягкий редирект вместо жесткого перенаправления
+      if (window.location.pathname !== '/auth/login') {
+        window.location.href = '/auth/login'
+      }
     }
 
     // Формируем сообщение об ошибке для пользователя
     const errorMessage =
-      (response && response.data && response.data.message) ||
+      (error.response && error.response.data && error.response.data.message) ||
       error.message ||
       'Произошла неизвестная ошибка'
 

@@ -144,6 +144,7 @@ const TicketForm = () => {
                       <option value="hardware">Оборудование</option>
                       <option value="software">Программное обеспечение</option>
                       <option value="network">Сеть</option>
+                      <option value="maintenance">Техническое обслуживание</option>
                       <option value="other">Другое</option>
                     </Form.Select>
                     <Form.Control.Feedback type="invalid">

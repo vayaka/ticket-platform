@@ -1,89 +1,5 @@
-import api from './api'
-import { format } from 'date-fns'
-
-// Моковые данные для разработки
-let mockTickets = [
-  {
-    id: 1,
-    title: 'Поломка принтера',
-    description: 'Принтер не печатает, замятие бумаги в лотке 2',
-    status: 'new',
-    priority: 'high',
-    category: 'hardware',
-    department: 'IT',
-    assignedTo: null,
-    createdBy: {
-      id: 3,
-      name: 'Пётр Петров',
-    },
-    createdAt: '2025-03-01T10:30:00',
-    updatedAt: '2025-03-01T10:30:00',
-    dueDate: '2025-03-10T18:00:00',
-    comments: [
-      {
-        id: 1,
-        text: 'Заявка принята в обработку',
-        createdBy: {
-          id: 2,
-          name: 'Иван Иванов',
-        },
-        createdAt: '2025-03-01T11:15:00',
-      },
-    ],
-    attachments: [],
-  },
-  {
-    id: 2,
-    title: 'Не работает интернет',
-    description: 'Подключение отсутствует в кабинете 305, маршрутизатор постоянно перезагружается',
-    status: 'new',
-    priority: 'critical',
-    category: 'network',
-    department: 'IT',
-    assignedTo: null,
-    createdBy: {
-      id: 3,
-      name: 'Пётр Петров',
-    },
-    createdAt: '2025-03-05T09:15:00',
-    updatedAt: '2025-03-05T09:15:00',
-    dueDate: '2025-03-07T15:00:00',
-    comments: [],
-    attachments: [],
-  },
-  {
-    id: 3,
-    title: 'Проблемы с кондиционером',
-    description: 'Кондиционер не охлаждает, странный шум при работе в кабинете директора',
-    status: 'in-progress',
-    priority: 'medium',
-    category: 'maintenance',
-    department: 'Техническое обслуживание',
-    assignedTo: {
-      id: 2,
-      name: 'Иван Иванов',
-    },
-    createdBy: {
-      id: 1,
-      name: 'Администратор',
-    },
-    createdAt: '2025-03-02T14:20:00',
-    updatedAt: '2025-03-03T09:10:00',
-    dueDate: '2025-03-15T18:00:00',
-    comments: [
-      {
-        id: 2,
-        text: 'Выезд специалиста запланирован на 14:00 сегодня',
-        createdBy: {
-          id: 2,
-          name: 'Иван Иванов',
-        },
-        createdAt: '2025-03-03T09:10:00',
-      },
-    ],
-    attachments: [],
-  },
-]
+// src/services/ticketService.js (с реальным API)
+import api from './api';
 
 const ticketService = {
   /**
@@ -91,21 +7,7 @@ const ticketService = {
    * @returns {Promise<Array>}
    */
   getAllTickets: async () => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve([...mockTickets])
-        }, 500) // Имитация задержки сети
-      })
-    }
-
-    // В продакшене используем реальный API
-    try {
-      return await api.get('/tickets')
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка получения списка заявок')
-    }
+    return await api.get('/tickets');
   },
 
   /**
@@ -114,23 +16,7 @@ const ticketService = {
    * @returns {Promise<Array>}
    */
   getUserTickets: async (userId) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          const userTickets = mockTickets.filter(
-            ticket => ticket.createdBy.id === userId || ticket.assignedTo?.id === userId
-          )
-          resolve([...userTickets])
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.get(`/users/${userId}/tickets`)
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка получения заявок пользователя')
-    }
+    return await api.get(`/users/${userId}/tickets`);
   },
 
   /**
@@ -139,25 +25,7 @@ const ticketService = {
    * @returns {Promise<Object>}
    */
   getTicketById: async (id) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticket = mockTickets.find(ticket => ticket.id === parseInt(id))
-          if (ticket) {
-            resolve({...ticket})
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.get(`/tickets/${id}`)
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка получения заявки')
-    }
+    return await api.get(`/tickets/${id}`);
   },
 
   /**
@@ -166,247 +34,110 @@ const ticketService = {
    * @returns {Promise<Object>}
    */
   createTicket: async (ticketData) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          const user = JSON.parse(localStorage.getItem('user') || '{}')
-          const now = new Date().toISOString()
+    // Создаем объект FormData для отправки файлов
+    const formData = new FormData();
 
-          const newTicket = {
-            id: mockTickets.length + 1,
-            ...ticketData,
-            status: 'new',
-            assignedTo: null,
-            createdBy: {
-              id: user.id || 3,
-              name: user.name || 'Пётр Петров',
-            },
-            createdAt: now,
-            updatedAt: now,
-            comments: [],
-            attachments: [],
-          }
+    // Добавляем все поля заявки
+    Object.keys(ticketData).forEach(key => {
+      if (key !== 'attachments') {
+        formData.append(key, ticketData[key]);
+      }
+    });
 
-          mockTickets = [newTicket, ...mockTickets]
-          resolve({...newTicket})
-        }, 500)
-      })
+    // Добавляем файлы, если они есть
+    if (ticketData.attachments && ticketData.attachments.length > 0) {
+      ticketData.attachments.forEach(file => {
+        formData.append('files', file);
+      });
     }
 
-    try {
-      return await api.post('/tickets', ticketData)
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка создания заявки')
-    }
+    return await api.post('/tickets', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
   },
 
   /**
    * Обновление заявки
-   * @param {number} id
+   * @param {string} id
    * @param {Object} ticketData
    * @returns {Promise<Object>}
    */
   updateTicket: async (id, ticketData) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticketIndex = mockTickets.findIndex(ticket => ticket.id === parseInt(id))
+    // Создаем объект FormData для отправки файлов
+    const formData = new FormData();
 
-          if (ticketIndex !== -1) {
-            const updatedTicket = {
-              ...mockTickets[ticketIndex],
-              ...ticketData,
-              updatedAt: new Date().toISOString()
-            }
+    // Добавляем все поля заявки
+    Object.keys(ticketData).forEach(key => {
+      if (key !== 'attachments') {
+        formData.append(key, ticketData[key]);
+      }
+    });
 
-            mockTickets[ticketIndex] = updatedTicket
-            resolve({...updatedTicket})
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
+    // Добавляем файлы, если они есть
+    if (ticketData.attachments && ticketData.attachments.length > 0) {
+      ticketData.attachments.forEach(file => {
+        formData.append('files', file);
+      });
     }
 
-    try {
-      return await api.put(`/tickets/${id}`, ticketData)
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка обновления заявки')
-    }
+    return await api.put(`/tickets/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
   },
 
   /**
    * Удаление заявки
-   * @param {number} id
+   * @param {string} id
    * @returns {Promise<void>}
    */
   deleteTicket: async (id) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticketIndex = mockTickets.findIndex(ticket => ticket.id === parseInt(id))
-
-          if (ticketIndex !== -1) {
-            mockTickets = mockTickets.filter(ticket => ticket.id !== parseInt(id))
-            resolve()
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.delete(`/tickets/${id}`)
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка удаления заявки')
-    }
+    return await api.delete(`/tickets/${id}`);
   },
 
   /**
    * Добавление комментария к заявке
-   * @param {number} ticketId
+   * @param {string} ticketId
    * @param {string} text
    * @returns {Promise<Object>}
    */
   addComment: async (ticketId, text) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticketIndex = mockTickets.findIndex(ticket => ticket.id === parseInt(ticketId))
-          const user = JSON.parse(localStorage.getItem('user') || '{}')
-
-          if (ticketIndex !== -1) {
-            const newComment = {
-              id: (mockTickets[ticketIndex].comments.length > 0
-                ? Math.max(...mockTickets[ticketIndex].comments.map(c => c.id)) + 1
-                : 1),
-              text,
-              createdBy: {
-                id: user.id || 2,
-                name: user.name || 'Иван Иванов',
-              },
-              createdAt: new Date().toISOString(),
-            }
-
-            mockTickets[ticketIndex].comments.push(newComment)
-            mockTickets[ticketIndex].updatedAt = new Date().toISOString()
-
-            resolve(newComment)
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.post(`/tickets/${ticketId}/comments`, { text })
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка добавления комментария')
-    }
+    return await api.post(`/tickets/${ticketId}/comments`, { text });
   },
 
   /**
    * Изменение статуса заявки
-   * @param {number} ticketId
+   * @param {string} ticketId
    * @param {string} status
    * @param {string} comment
    * @returns {Promise<Object>}
    */
   changeStatus: async (ticketId, status, comment = '') => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticketIndex = mockTickets.findIndex(ticket => ticket.id === parseInt(ticketId))
-          const user = JSON.parse(localStorage.getItem('user') || '{}')
-
-          if (ticketIndex !== -1) {
-            const updatedTicket = {
-              ...mockTickets[ticketIndex],
-              status,
-              updatedAt: new Date().toISOString()
-            }
-
-            mockTickets[ticketIndex] = updatedTicket
-
-            // Если комментарий указан, добавляем его
-            if (comment) {
-              const newComment = {
-                id: (mockTickets[ticketIndex].comments.length > 0
-                  ? Math.max(...mockTickets[ticketIndex].comments.map(c => c.id)) + 1
-                  : 1),
-                text: comment,
-                createdBy: {
-                  id: user.id || 2,
-                  name: user.name || 'Иван Иванов',
-                },
-                createdAt: new Date().toISOString(),
-              }
-
-              mockTickets[ticketIndex].comments.push(newComment)
-            }
-
-            resolve({...updatedTicket})
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.patch(`/tickets/${ticketId}/status`, { status, comment })
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка изменения статуса заявки')
-    }
+    return await api.patch(`/tickets/${ticketId}/status`, { status, comment });
   },
 
   /**
    * Назначение исполнителя заявки
-   * @param {number} ticketId
-   * @param {number} userId
-   * @param {string} userName
+   * @param {string} ticketId
+   * @param {string} userId
    * @returns {Promise<Object>}
    */
-  assignTicket: async (ticketId, userId, userName) => {
-    // В режиме разработки используем моковые данные
-    if (process.env.NODE_ENV === 'development' || !import.meta.env.VITE_API_URL) {
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const ticketIndex = mockTickets.findIndex(ticket => ticket.id === parseInt(ticketId))
-
-          if (ticketIndex !== -1) {
-            const updatedTicket = {
-              ...mockTickets[ticketIndex],
-              assignedTo: {
-                id: userId,
-                name: userName,
-              },
-              status: mockTickets[ticketIndex].status === 'new' ? 'assigned' : mockTickets[ticketIndex].status,
-              updatedAt: new Date().toISOString()
-            }
-
-            mockTickets[ticketIndex] = updatedTicket
-            resolve({...updatedTicket})
-          } else {
-            reject(new Error('Заявка не найдена'))
-          }
-        }, 500)
-      })
-    }
-
-    try {
-      return await api.patch(`/tickets/${ticketId}/assign`, { userId })
-    } catch (error) {
-      throw new Error(error.message || 'Ошибка назначения исполнителя')
-    }
+  assignTicket: async (ticketId, userId) => {
+    return await api.patch(`/tickets/${ticketId}/assign`, { userId });
   },
-}
 
-export default ticketService
+  /**
+   * Удаление вложения
+   * @param {string} ticketId
+   * @param {string} attachmentId
+   * @returns {Promise<Object>}
+   */
+  deleteAttachment: async (ticketId, attachmentId) => {
+    return await api.delete(`/tickets/${ticketId}/attachments/${attachmentId}`);
+  }
+};
+
+export default ticketService;

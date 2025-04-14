@@ -22,6 +22,10 @@ export const AuthProvider = ({ children }) => {
       setLoading(true)
       setError(null)
       const userData = await authService.login(email, password)
+
+      // Добавьте лог для проверки
+      console.log('Получены данные пользователя:', userData)
+
       setUser(userData)
       localStorage.setItem('user', JSON.stringify(userData))
       return userData
