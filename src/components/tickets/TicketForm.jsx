@@ -49,25 +49,34 @@ const TicketForm = () => {
       // Подготавливаем данные заявки
       const ticketData = {
         ...values,
-        attachments: selectedFile
-          ? [{
-              name: selectedFile.name,
-              size: selectedFile.size,
-              type: selectedFile.type,
-              uploadedAt: new Date().toISOString()
-            }]
-          : []
+        attachments: selectedFile ? [selectedFile] : []
       }
 
+      console.log('Отправляем заявку:', ticketData)
+
       const newTicket = await createTicket(ticketData)
+      console.log('Получен ответ:', newTicket)
+
       resetForm()
       setSelectedFile(null)
 
-      // Перенаправляем на страницу созданной заявки
-      navigate(`/tickets/${newTicket.id}`, {
-        state: { success: true, message: 'Заявка успешно создана' }
-      })
+      // Проверяем наличие ID в ответе (MongoDB может вернуть _id)
+      const ticketId = newTicket.id || newTicket._id
+
+      if (ticketId) {
+        // Перенаправляем на страницу созданной заявки
+        navigate(`/tickets/${ticketId}`, {
+          state: { success: true, message: 'Заявка успешно создана' }
+        })
+      } else {
+        // Если ID нет, перенаправляем на список заявок
+        setError('Заявка создана, но не удалось получить ее ID')
+        navigate('/tickets', {
+          state: { success: true, message: 'Заявка успешно создана' }
+        })
+      }
     } catch (err) {
+      console.error('Ошибка создания заявки:', err)
       setError(err.message || 'Произошла ошибка при создании заявки')
     } finally {
       setIsSubmitting(false)

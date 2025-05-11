@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ticketService from '../services/ticketService'
 
 export const TicketContext = createContext()
@@ -12,31 +12,28 @@ export const TicketProvider = ({ children }) => {
     status: '',
     priority: '',
     department: '',
+    category: '',
     search: '',
+    assignedTo: '',
+    createdBy: ''
   })
 
-  // Загрузка всех заявок
-  const fetchTickets = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await ticketService.getAllTickets()
-      setTickets(data)
-      applyFilters(data, filters)
-    } catch (err) {
-      setError(err.message || 'Ошибка загрузки заявок')
-    } finally {
-      setLoading(false)
-    }
-  }, [filters])
+  // Refs для оптимизации
+  const lastFetchTime = useRef(0)
+  const isFirstLoad = useRef(true)
+  const activeRequests = useRef(new Map())
+  const CACHE_DURATION = 30000 // 30 секунд
 
-  // Загрузка заявок при монтировании компонента
-  useEffect(() => {
-    fetchTickets()
-  }, [fetchTickets])
+  // Функция для отмены активных запросов
+  const cancelActiveRequests = useCallback(() => {
+    activeRequests.current.forEach((controller) => {
+      controller.abort()
+    })
+    activeRequests.current.clear()
+  }, [])
 
   // Применение фильтров
-  const applyFilters = (ticketsArray, filterOptions) => {
+  const applyFilters = useCallback((ticketsArray, filterOptions) => {
     let filtered = [...ticketsArray]
 
     if (filterOptions.status) {
@@ -51,33 +48,98 @@ export const TicketProvider = ({ children }) => {
       filtered = filtered.filter(ticket => ticket.department === filterOptions.department)
     }
 
+    if (filterOptions.category) {
+      filtered = filtered.filter(ticket => ticket.category === filterOptions.category)
+    }
+
+    if (filterOptions.assignedTo) {
+      filtered = filtered.filter(ticket =>
+        ticket.assignedTo && ticket.assignedTo.id === filterOptions.assignedTo
+      )
+    }
+
+    if (filterOptions.createdBy) {
+      filtered = filtered.filter(ticket =>
+        ticket.createdBy && ticket.createdBy.id === filterOptions.createdBy
+      )
+    }
+
     if (filterOptions.search) {
       const searchLower = filterOptions.search.toLowerCase()
       filtered = filtered.filter(
         ticket =>
           ticket.title.toLowerCase().includes(searchLower) ||
-          ticket.description.toLowerCase().includes(searchLower)
+          ticket.description.toLowerCase().includes(searchLower) ||
+          (ticket.assignedTo && ticket.assignedTo.name.toLowerCase().includes(searchLower)) ||
+          (ticket.createdBy && ticket.createdBy.name.toLowerCase().includes(searchLower))
       )
     }
 
     setFilteredTickets(filtered)
-  }
+  }, [])
 
   // Обновление фильтров
-  const updateFilters = (newFilters) => {
+  const updateFilters = useCallback((newFilters) => {
     const updatedFilters = { ...filters, ...newFilters }
     setFilters(updatedFilters)
     applyFilters(tickets, updatedFilters)
-  }
+  }, [filters, tickets, applyFilters])
+
+  // Загрузка всех заявок с кешированием
+  const fetchTickets = useCallback(async (forceReload = false) => {
+    const now = Date.now()
+
+    // Проверяем кеш только если не принудительная перезагрузка
+    if (!forceReload && tickets.length > 0 && (now - lastFetchTime.current < CACHE_DURATION)) {
+      console.log('Используем кешированные данные')
+      return
+    }
+
+    // Отменяем предыдущие запросы
+    if (activeRequests.current.has('fetchTickets')) {
+      activeRequests.current.get('fetchTickets').abort()
+    }
+
+    const controller = new AbortController()
+    activeRequests.current.set('fetchTickets', controller)
+
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await ticketService.getAllTickets({ signal: controller.signal })
+
+      if (!controller.signal.aborted) {
+        setTickets(data)
+        applyFilters(data, filters)
+        lastFetchTime.current = now
+        isFirstLoad.current = false
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setError(err.message || 'Ошибка загрузки заявок')
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
+      activeRequests.current.delete('fetchTickets')
+    }
+  }, [tickets.length, filters, applyFilters])
 
   // Создание новой заявки
-  const createTicket = async (ticketData) => {
+  const createTicket = useCallback(async (ticketData) => {
     try {
       setLoading(true)
       setError(null)
       const newTicket = await ticketService.createTicket(ticketData)
+
+      // Обновляем локальное состояние для быстрого отображения
       setTickets(prev => [newTicket, ...prev])
       applyFilters([newTicket, ...tickets], filters)
+
+      // Перезагружаем данные с сервера для синхронизации
+      await fetchTickets(true)
+
       return newTicket
     } catch (err) {
       setError(err.message || 'Ошибка создания заявки')
@@ -85,32 +147,68 @@ export const TicketProvider = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tickets, filters, applyFilters, fetchTickets])
 
-  // Получение заявки по ID
-  const getTicketById = async (id) => {
+  // Получение заявки по ID с кешированием
+  const getTicketById = useCallback(async (id) => {
+    // Сначала проверяем кеш
+    const cachedTicket = tickets.find(t => t.id === id || t.id === parseInt(id))
+    if (cachedTicket) {
+      return cachedTicket
+    }
+
+    // Отменяем предыдущий запрос для этого ID
+    const requestKey = `getTicket-${id}`
+    if (activeRequests.current.has(requestKey)) {
+      activeRequests.current.get(requestKey).abort()
+    }
+
+    const controller = new AbortController()
+    activeRequests.current.set(requestKey, controller)
+
     try {
       setLoading(true)
       setError(null)
-      return await ticketService.getTicketById(id)
+      const ticket = await ticketService.getTicketById(id, { signal: controller.signal })
+
+      if (!controller.signal.aborted) {
+        // Обновляем кеш
+        setTickets(prev => {
+          const exists = prev.find(t => t.id === ticket.id)
+          if (exists) {
+            return prev.map(t => t.id === ticket.id ? ticket : t)
+          }
+          return [ticket, ...prev]
+        })
+
+        return ticket
+      }
     } catch (err) {
-      setError(err.message || 'Ошибка получения заявки')
+      if (!controller.signal.aborted) {
+        setError(err.message || 'Ошибка получения заявки')
+      }
       throw err
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
+      activeRequests.current.delete(requestKey)
     }
-  }
+  }, [tickets])
 
   // Обновление заявки
-  const updateTicket = async (id, ticketData) => {
+  const updateTicket = useCallback(async (id, ticketData) => {
     try {
       setLoading(true)
       setError(null)
       const updatedTicket = await ticketService.updateTicket(id, ticketData)
+
+      // Обновляем локальное состояние
       setTickets(prev =>
         prev.map(ticket => ticket.id === id ? updatedTicket : ticket)
       )
       applyFilters(tickets.map(ticket => ticket.id === id ? updatedTicket : ticket), filters)
+
       return updatedTicket
     } catch (err) {
       setError(err.message || 'Ошибка обновления заявки')
@@ -118,14 +216,15 @@ export const TicketProvider = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tickets, filters, applyFilters])
 
   // Удаление заявки
-  const deleteTicket = async (id) => {
+  const deleteTicket = useCallback(async (id) => {
     try {
       setLoading(true)
       setError(null)
       await ticketService.deleteTicket(id)
+
       const updatedTickets = tickets.filter(ticket => ticket.id !== id)
       setTickets(updatedTickets)
       applyFilters(updatedTickets, filters)
@@ -135,156 +234,107 @@ export const TicketProvider = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tickets, filters, applyFilters])
 
-  const assignTicket = async (ticketId, userId, userName) => {
+  // Добавление комментария
+  const addComment = useCallback(async (ticketId, text) => {
     try {
-      setLoading(true);
-      setError(null);
+      setLoading(true)
+      setError(null)
 
-      // Получаем текущую заявку
-      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+      const comment = await ticketService.addComment(ticketId, text)
 
-      if (!ticket) {
-        throw new Error('Заявка не найдена');
-      }
+      // Обновляем локальное состояние
+      setTickets(prev => prev.map(ticket => {
+        if (ticket.id === ticketId || ticket.id === parseInt(ticketId)) {
+          return {
+            ...ticket,
+            comments: [...(ticket.comments || []), comment],
+            updatedAt: new Date().toISOString()
+          }
+        }
+        return ticket
+      }))
 
-      // Обновляем заявку с новым исполнителем
-      const updatedTicket = {
-        ...ticket,
-        assignedTo: { id: userId, name: userName },
-        status: ticket.status === 'new' ? 'assigned' : ticket.status,
-        updatedAt: new Date().toISOString()
-      };
-
-      // В реальном приложении здесь был бы API-запрос
-      const result = await ticketService.assignTicket(ticketId, userId, userName);
-
-      // Обновляем состояние
-      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
-
-      // Применяем фильтры
-      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
-
-      return updatedTicket;
+      return comment
     } catch (err) {
-      setError(err.message || 'Ошибка назначения исполнителя');
-      throw err;
+      setError(err.message || 'Ошибка добавления комментария')
+      throw err
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [])
 
-  const changeStatus = async (ticketId, status, comment = '') => {
+  // Изменение статуса
+  const changeStatus = useCallback(async (ticketId, status, comment = '') => {
     try {
-      setLoading(true);
-      setError(null);
+      setLoading(true)
+      setError(null)
 
-      // Получаем текущую заявку
-      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+      const updatedTicket = await ticketService.changeStatus(ticketId, status, comment)
 
-      if (!ticket) {
-        throw new Error('Заявка не найдена');
-      }
+      // Обновляем локальное состояние
+      setTickets(prev => prev.map(t =>
+        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+      ))
 
-      // Обновляем заявку с новым статусом
-      const updatedTicket = {
-        ...ticket,
-        status,
-        updatedAt: new Date().toISOString()
-      };
+      // Применяем фильтры к обновленному списку
+      applyFilters(tickets.map(t =>
+        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+      ), filters)
 
-      // Если есть комментарий, добавляем его
-      if (comment) {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const newComment = {
-          id: (ticket.comments && ticket.comments.length > 0)
-            ? Math.max(...ticket.comments.map(c => c.id)) + 1
-            : 1,
-          text: comment,
-          createdBy: {
-            id: user.id || 1,
-            name: user.name || 'Пользователь'
-          },
-          createdAt: new Date().toISOString()
-        };
-
-        updatedTicket.comments = [...(ticket.comments || []), newComment];
-      }
-
-      // В реальном приложении здесь был бы API-запрос
-      const result = await ticketService.changeStatus(ticketId, status, comment);
-
-      // Обновляем состояние
-      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
-
-      // Применяем фильтры
-      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
-
-      return updatedTicket;
+      return updatedTicket
     } catch (err) {
-      setError(err.message || 'Ошибка изменения статуса');
-      throw err;
+      setError(err.message || 'Ошибка изменения статуса')
+      throw err
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [tickets, filters, applyFilters])
 
-  // Добавим функцию addComment
-  const addComment = async (ticketId, text) => {
+  // Назначение исполнителя
+  const assignTicket = useCallback(async (ticketId, userId, userName) => {
     try {
-      setLoading(true);
-      setError(null);
+      setLoading(true)
+      setError(null)
 
-      // Получаем текущую заявку
-      const ticket = tickets.find(t => t.id === parseInt(ticketId));
+      const updatedTicket = await ticketService.assignTicket(ticketId, userId)
 
-      if (!ticket) {
-        throw new Error('Заявка не найдена');
-      }
+      // Обновляем локальное состояние
+      setTickets(prev => prev.map(t =>
+        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+      ))
 
-      // Получаем данные пользователя
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      // Применяем фильтры к обновленному списку
+      applyFilters(tickets.map(t =>
+        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+      ), filters)
 
-      // Создаем новый комментарий
-      const newComment = {
-        id: (ticket.comments && ticket.comments.length > 0)
-          ? Math.max(...ticket.comments.map(c => c.id)) + 1
-          : 1,
-        text,
-        createdBy: {
-          id: user.id || 1,
-          name: user.name || 'Пользователь'
-        },
-        createdAt: new Date().toISOString()
-      };
-
-      // Обновляем заявку с новым комментарием
-      const updatedTicket = {
-        ...ticket,
-        comments: [...(ticket.comments || []), newComment],
-        updatedAt: new Date().toISOString()
-      };
-
-      // В реальном приложении здесь был бы API-запрос
-      const result = await ticketService.addComment(ticketId, text);
-
-      // Обновляем состояние
-      setTickets(prev => prev.map(t => t.id === parseInt(ticketId) ? updatedTicket : t));
-
-      // Применяем фильтры
-      applyFilters(tickets.map(t => t.id === parseInt(ticketId) ? updatedTicket : t), filters);
-
-      return newComment;
+      return updatedTicket
     } catch (err) {
-      setError(err.message || 'Ошибка добавления комментария');
-      throw err;
+      setError(err.message || 'Ошибка назначения исполнителя')
+      throw err
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [tickets, filters, applyFilters])
 
-  const value = {
+  // Загружаем заявки при первом рендере
+  useEffect(() => {
+    if (isFirstLoad.current) {
+      fetchTickets()
+    }
+  }, [fetchTickets])
+
+  // Cleanup функция
+  useEffect(() => {
+    return () => {
+      cancelActiveRequests()
+    }
+  }, [cancelActiveRequests])
+
+  // Мемоизируем значение контекста
+  const value = useMemo(() => ({
     tickets: filteredTickets,
     allTickets: tickets,
     loading,
@@ -296,10 +346,25 @@ export const TicketProvider = ({ children }) => {
     getTicketById,
     updateTicket,
     deleteTicket,
-    addComment,     // Добавили
-    changeStatus,   // Добавили
+    addComment,
+    changeStatus,
     assignTicket,
-  }
+  }), [
+    filteredTickets,
+    tickets,
+    loading,
+    error,
+    filters,
+    fetchTickets,
+    updateFilters,
+    createTicket,
+    getTicketById,
+    updateTicket,
+    deleteTicket,
+    addComment,
+    changeStatus,
+    assignTicket
+  ])
 
   return <TicketContext.Provider value={value}>{children}</TicketContext.Provider>
 }

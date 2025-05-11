@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const attachmentSchema = new mongoose.Schema({
   name: {
@@ -64,7 +64,7 @@ const ticketSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['hardware', 'software', 'network', 'other'],
+    enum: ['hardware', 'software', 'network', 'maintenance', 'other'],
     required: true
   },
   department: {
@@ -103,6 +103,14 @@ const ticketSchema = new mongoose.Schema({
   timestamps: true
 });
 
+ticketSchema.virtual('id').get(function() {
+  return this._id.toHexString();
+});
+
+ticketSchema.set('toJSON', {
+  virtuals: true
+});
+
 const Ticket = mongoose.model('Ticket', ticketSchema);
 
-module.exports = Ticket;
+export default Ticket;

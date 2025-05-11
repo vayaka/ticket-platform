@@ -1,10 +1,15 @@
-const express = require('express');
+import express from 'express';
+import Ticket from '../models/Ticket.js';
+import auth from '../middleware/auth.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const router = express.Router();
-const Ticket = require('../models/Ticket');
-const auth = require('../middleware/auth');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
 // Настройка хранилища для загруженных файлов
 const storage = multer.diskStorage({
@@ -59,8 +64,8 @@ router.get('/', auth, async (req, res) => {
     if (req.user.role === 'user') {
       filter.$or = filter.$or || [];
       filter.$or.push(
-        { createdBy: req.user._id },
-        { assignedTo: req.user._id }
+        { createdBy: req.user.id },
+        { assignedTo: req.user.id }
       );
     }
 
@@ -113,11 +118,11 @@ router.post('/', auth, upload.array('files', 5), async (req, res) => {
       priority,
       department,
       dueDate: dueDate || null,
-      createdBy: req.user._id,
+      createdBy: req.user.id,
       attachments,
       statusHistory: [{
         status: 'new',
-        changedBy: req.user._id,
+        changedBy: req.user.id,
         comment: 'Заявка создана'
       }]
     });
@@ -142,7 +147,7 @@ router.put('/:id', auth, upload.array('files', 5), async (req, res) => {
     }
 
     // Проверка прав на редактирование
-    if (req.user.role === 'user' && ticket.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'user' && ticket.createdBy.toString() !== req.user.id.toString()) {
       return res.status(403).json({ message: 'Нет прав на редактирование этой заявки' });
     }
 
@@ -187,7 +192,7 @@ router.patch('/:id/status', auth, async (req, res) => {
     }
 
     // Проверка прав на изменение статуса
-    if (req.user.role === 'user' && ticket.assignedTo?.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'user' && ticket.assignedTo?.toString() !== req.user.id.toString()) {
       return res.status(403).json({ message: 'Нет прав на изменение статуса этой заявки' });
     }
 
@@ -197,7 +202,7 @@ router.patch('/:id/status', auth, async (req, res) => {
     // Добавление записи в историю статусов
     ticket.statusHistory.push({
       status,
-      changedBy: req.user._id,
+      changedBy: req.user.id,
       comment: comment || `Статус изменен на "${status}"`,
     });
 
@@ -235,7 +240,7 @@ router.patch('/:id/assign', auth, async (req, res) => {
       // Добавление записи в историю статусов
       ticket.statusHistory.push({
         status: 'assigned',
-        changedBy: req.user._id,
+        changedBy: req.user.id,
         comment: 'Назначен исполнитель'
       });
     }
@@ -262,7 +267,7 @@ router.post('/:id/comments', auth, async (req, res) => {
 
     const comment = {
       text,
-      createdBy: req.user._id,
+      createdBy: req.user.id,
     };
 
     ticket.comments.push(comment);
@@ -290,7 +295,7 @@ router.delete('/:id/attachments/:attachmentId', auth, async (req, res) => {
     }
 
     // Проверка прав на редактирование
-    if (req.user.role === 'user' && ticket.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'user' && ticket.createdBy.toString() !== req.user.id.toString()) {
       return res.status(403).json({ message: 'Нет прав на редактирование этой заявки' });
     }
 
@@ -317,4 +322,4 @@ router.delete('/:id/attachments/:attachmentId', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Card, Row, Col, Badge, Button, Alert, Form, Modal, ListGroup } from 'react-bootstrap'
 import { format } from 'date-fns'
@@ -29,6 +29,74 @@ const TicketDetail = () => {
   const [newFile, setNewFile] = useState(null);
   const [fileUploadError, setFileUploadError] = useState(null);
 
+  // Добавляем ref для предотвращения повторных загрузок
+  const hasLoaded = useRef(false)
+
+  // Разрешено ли пользователю редактировать заявку
+  const canEdit = user && (
+    user.role === 'admin' ||
+    user.role === 'moderator' ||
+    (ticket && ticket.createdBy && ticket.createdBy.id === user.id)
+  )
+
+  // Разрешено ли пользователю управлять статусом
+  const canManageStatus = user && (
+    user.role === 'admin' ||
+    user.role === 'moderator' ||
+    (ticket && ticket.assignedTo && ticket.assignedTo.id === user.id)
+  )
+
+  // Разрешено ли пользователю назначать исполнителя
+  const canAssign = user && (user.role === 'admin' || user.role === 'moderator')
+
+  // Получаем данные заявки при загрузке страницы
+  useEffect(() => {
+    const loadTicket = async () => {
+      // Проверяем, чтобы не загружать повторно
+      if (hasLoaded.current) return
+
+      try {
+        setLoading(true)
+        setError(null)
+
+        console.log('Загрузка заявки с ID:', id)
+
+        const ticketData = await getTicketById(id)
+        console.log('Полученные данные заявки:', ticketData)
+
+        if (!ticketData) {
+          throw new Error('Заявка не найдена')
+        }
+
+        setTicket(ticketData)
+        hasLoaded.current = true
+      } catch (err) {
+        console.error('Ошибка загрузки заявки:', err)
+        setError(err.message || 'Ошибка загрузки заявки')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadTicket()
+
+    // Cleanup при размонтировании или изменении ID
+    return () => {
+      hasLoaded.current = false
+    }
+  }, [id])
+
+  // Очищаем сообщение об успехе при покидании страницы
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (success) {
+        setSuccess(null)
+      }
+    }, 5000)
+
+    return () => clearTimeout(timer)
+  }, [success])
+
   // Метод для добавления файла
   const handleFileUpload = async () => {
     if (!newFile) return;
@@ -38,9 +106,6 @@ const TicketDetail = () => {
       setFileUploadError(null);
 
       // В реальном приложении здесь будет загрузка файла на сервер
-      // Например, используя FormData и axios
-
-      // Имитация добавления файла
       const fileData = {
         name: newFile.name,
         size: newFile.size,
@@ -88,50 +153,6 @@ const TicketDetail = () => {
     }
   };
 
-  // Разрешено ли пользователю редактировать заявку
-  const canEdit = user && (
-    user.role === 'admin' ||
-    user.role === 'moderator' ||
-    (ticket && ticket.createdBy && ticket.createdBy.id === user.id)
-  )
-
-  // Разрешено ли пользователю управлять статусом
-  const canManageStatus = user && (
-    user.role === 'admin' ||
-    user.role === 'moderator' ||
-    (ticket && ticket.assignedTo && ticket.assignedTo.id === user.id)
-  )
-
-  // Разрешено ли пользователю назначать исполнителя
-  const canAssign = user && (user.role === 'admin' || user.role === 'moderator')
-
-  // Получаем данные заявки при загрузке страницы
-  useEffect(() => {
-    const loadTicket = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const ticketData = await getTicketById(id)
-        setTicket(ticketData)
-      } catch (err) {
-        setError(err.message || 'Ошибка загрузки заявки')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadTicket()
-  }, [id, getTicketById])
-
-  // Очищаем сообщение об успехе при покидании страницы
-  useEffect(() => {
-    return () => {
-      if (location.state?.success) {
-        navigate(location.pathname, { replace: true, state: {} })
-      }
-    }
-  }, [location, navigate])
-
   // Отправка комментария
   const handleCommentSubmit = async (e) => {
     e.preventDefault()
@@ -142,22 +163,14 @@ const TicketDetail = () => {
       setError(null)
 
       // Добавляем комментарий
-      const newComment = {
-        text: comment,
-        createdBy: {
-          id: user.id,
-          name: user.name
-        },
-        createdAt: new Date().toISOString()
-      }
+      const newComment = await addComment(ticket.id, comment)
 
-      // Обновляем заявку с новым комментарием
-      const updatedTicket = await updateTicket(ticket.id, {
-        ...ticket,
-        comments: [...ticket.comments, newComment]
-      })
+      // Обновляем локальное состояние заявки
+      setTicket(prev => ({
+        ...prev,
+        comments: [...(prev.comments || []), newComment]
+      }))
 
-      setTicket(updatedTicket)
       setComment('')
       setSuccess('Комментарий добавлен')
     } catch (err) {
@@ -173,10 +186,9 @@ const TicketDetail = () => {
 
     try {
       setLoading(true)
-      await changeStatus(ticket.id, newStatus, statusComment)
 
-      // Обновляем данные заявки после изменения статуса
-      const updatedTicket = await getTicketById(id)
+      const updatedTicket = await changeStatus(ticket.id, newStatus, statusComment)
+
       setTicket(updatedTicket)
       setShowStatusModal(false)
       setNewStatus('')
@@ -189,14 +201,13 @@ const TicketDetail = () => {
     }
   }
 
-  // Назначение исполнителя (в демо версии назначаем текущего пользователя)
+  // Назначение исполнителя
   const handleAssignToMe = async () => {
     try {
       setLoading(true)
-      await assignTicket(ticket.id, user.id, user.name)
 
-      // Обновляем данные заявки после назначения
-      const updatedTicket = await getTicketById(id)
+      const updatedTicket = await assignTicket(ticket.id, user.id, user.name)
+
       setTicket(updatedTicket)
       setSuccess('Вы назначены исполнителем заявки')
     } catch (err) {
@@ -242,7 +253,7 @@ const TicketDetail = () => {
   const getStatusName = (status) => {
     switch (status) {
       case 'new':
-        return 'Новая'
+        return 'Назначена'
       case 'assigned':
         return 'Назначена'
       case 'in-progress':
@@ -334,7 +345,7 @@ const TicketDetail = () => {
       )}
 
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Заявка #{ticket.id}</h2>
+        <h2>Заявка #{ticket.id || ticket._id}</h2>
         <div>
           <Button
             variant="outline-secondary"
@@ -348,7 +359,7 @@ const TicketDetail = () => {
             <Button
               variant="outline-primary"
               className="me-2"
-              onClick={() => navigate(`/tickets/${ticket.id}/edit`)}
+              onClick={() => navigate(`/tickets/${ticket.id || ticket._id}/edit`)}
             >
               <FaEdit className="me-1" /> Редактировать
             </Button>
@@ -388,7 +399,7 @@ const TicketDetail = () => {
               <p className="text-muted mb-4">
                 <small>
                   Создана: {formatDate(ticket.createdAt)} |
-                  Автор: {ticket.createdBy?.name || 'Неизвестно'}
+                  Автор: {ticket.createdBy?.name || 'Администратор'}
                 </small>
               </p>
               <div className="mb-4">{ticket.description}</div>
@@ -412,7 +423,7 @@ const TicketDetail = () => {
                     <FaBuilding className="text-muted me-2" />
                     <span className="fw-bold small">Отдел:</span>
                   </div>
-                  <div>{ticket.department}</div>
+                  <div>{ticket.department || 'IT'}</div>
                 </Col>
 
                 <Col sm={6} md={3}>
@@ -420,7 +431,7 @@ const TicketDetail = () => {
                     <FaUser className="text-muted me-2" />
                     <span className="fw-bold small">Исполнитель:</span>
                   </div>
-                  <div>{ticket.assignedTo?.name || 'Не назначен'}</div>
+                  <div>{ticket.assignedTo?.name || 'Администратор'}</div>
                 </Col>
 
                 <Col sm={6} md={3}>
@@ -461,11 +472,11 @@ const TicketDetail = () => {
                 </div>
               ) : (
                 <ListGroup variant="flush">
-                  {ticket.comments?.map((comment) => (
-                    <ListGroup.Item key={comment.id} className="py-3">
+                  {ticket.comments?.map((comment, index) => (
+                    <ListGroup.Item key={comment.id || index} className="py-3">
                       <div className="d-flex justify-content-between align-items-center mb-2">
                         <div className="fw-bold">
-                          {comment.createdBy?.name || 'Неизвестно'}
+                          {comment.createdBy?.name || 'Администратор'}
                         </div>
                         <small className="text-muted">
                           {formatDate(comment.createdAt)}
@@ -593,7 +604,7 @@ const TicketDetail = () => {
               )}
             </Card.Footer>
           </Card>
-          {/* Комментарии к заявке */}
+
           {/* История изменений */}
           <Card className="shadow-sm">
             <Card.Header className="bg-light">
@@ -618,7 +629,7 @@ const TicketDetail = () => {
                     <div className="fw-bold">Создание заявки</div>
                     <small className="text-muted">{formatDate(ticket.createdAt)}</small>
                   </div>
-                  <div>Заявка создана пользователем {ticket.createdBy?.name}</div>
+                  <div>Заявка создана пользователем {ticket.createdBy?.name || 'Администратор'}</div>
                 </ListGroup.Item>
               </ListGroup>
             </Card.Body>
@@ -639,7 +650,7 @@ const TicketDetail = () => {
               onChange={(e) => setNewStatus(e.target.value)}
             >
               <option value="">Выберите статус</option>
-              <option value="new">Новая</option>
+              <option value="new">Назначена</option>
               <option value="assigned">Назначена</option>
               <option value="in-progress">В работе</option>
               <option value="completed">Выполнена</option>
