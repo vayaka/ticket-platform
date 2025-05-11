@@ -8,6 +8,7 @@ const authService = {
    * @returns {Promise<Object>} Данные пользователя с токеном
    */
   login: async (email, password) => {
+<<<<<<< HEAD
     try {
       const response = await api.post('/auth/login', { email, password });
 
@@ -27,6 +28,9 @@ const authService = {
       console.error('Ошибка авторизации:', error);
       throw error;
     }
+=======
+    return await api.post('/auth/login', { email, password });
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
   },
 
   /**
@@ -34,6 +38,7 @@ const authService = {
    * @returns {Promise<void>}
    */
   logout: async () => {
+<<<<<<< HEAD
     try {
       // Отправляем запрос на сервер для завершения сессии
       await api.post('/auth/logout');
@@ -52,6 +57,9 @@ const authService = {
       // Отменяем все активные запросы
       api.cancelAllRequests();
     }
+=======
+    return await api.post('/auth/logout');
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
   },
 
   /**
@@ -60,6 +68,7 @@ const authService = {
    * @returns {Promise<Object>}
    */
   register: async (userData) => {
+<<<<<<< HEAD
     try {
       const response = await api.post('/auth/register', userData);
       return response;
@@ -67,6 +76,9 @@ const authService = {
       console.error('Ошибка регистрации:', error);
       throw error;
     }
+=======
+    return await api.post('/auth/register', userData);
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
   },
 
   /**
@@ -74,6 +86,7 @@ const authService = {
    * @returns {Promise<Object>}
    */
   checkSession: async () => {
+<<<<<<< HEAD
     try {
       const response = await api.get('/auth/me');
 
@@ -354,4 +367,10 @@ const authService = {
   }
 };
 
+=======
+    return await api.get('/auth/me');
+  },
+};
+
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 export default authService;

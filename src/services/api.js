@@ -6,8 +6,12 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+<<<<<<< HEAD
   timeout: 30000,
   withCredentials: false,
+=======
+  timeout: 10000, // Добавляем таймаут для запросов
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 })
 
 // Кеш для GET-запросов
@@ -19,11 +23,32 @@ const activeRequests = new Map()
 
 // Перехватчик для добавления токена к запросам
 api.interceptors.request.use(
+<<<<<<< HEAD
   async (config) => {
     // Проверяем наличие URL - ИСПРАВЛЕНО
     if (!config.url && !config.baseURL) {
       console.error('URL отсутствует в config:', config)
       return Promise.reject(new Error('URL запроса не определен'))
+=======
+  (config) => {
+    const user = localStorage.getItem('user')
+
+    // Добавьте лог для отладки
+    console.log('Токен из localStorage:', user ? JSON.parse(user).token : 'не найден')
+
+    if (user) {
+      try {
+        const userData = JSON.parse(user)
+        if (userData.token) {
+          config.headers.Authorization = `Bearer ${userData.token}`
+
+          // Проверьте заголовок Authorization
+          console.log('Заголовок Authorization:', config.headers.Authorization)
+        }
+      } catch (error) {
+        console.error('Ошибка при чтении данных пользователя:', error)
+      }
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
     }
 
     // Создаем полный URL
@@ -98,6 +123,7 @@ api.interceptors.request.use(
 // Перехватчик для обработки ответов
 api.interceptors.response.use(
   (response) => {
+<<<<<<< HEAD
     console.log('api.interceptors.response.use: response received');
     console.log('response:', response);
     console.log('response.data:', response.data);
@@ -236,6 +262,32 @@ api.interceptors.response.use(
 
     // Формируем сообщение об ошибке для пользователя
     let errorMessage = 'Произошла неизвестная ошибка'
+=======
+    // Возвращаем непосредственно данные ответа
+    return response.data
+  },
+  (error) => {
+    // Обрабатываем случай, когда запрос не прошел
+    if (!error.response) {
+      console.error('Сетевая ошибка, сервер недоступен')
+      return Promise.reject(new Error('Сервер недоступен, проверьте подключение'))
+    }
+
+    // Если ошибка 401 (неавторизован), выход из системы
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('user')
+      // Используем мягкий редирект вместо жесткого перенаправления
+      if (window.location.pathname !== '/auth/login') {
+        window.location.href = '/auth/login'
+      }
+    }
+
+    // Формируем сообщение об ошибке для пользователя
+    const errorMessage =
+      (error.response && error.response.data && error.response.data.message) ||
+      error.message ||
+      'Произошла неизвестная ошибка'
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 
     if (error.response?.data?.message) {
       errorMessage = error.response.data.message

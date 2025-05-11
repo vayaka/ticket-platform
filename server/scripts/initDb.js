@@ -1,7 +1,14 @@
+<<<<<<< HEAD
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Ticket from '../models/Ticket.js';
 import dotenv from 'dotenv';
+=======
+const mongoose = require('mongoose');
+const User = require('../models/User');
+const Ticket = require('../models/Ticket');
+const dotenv = require('dotenv');
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 
 dotenv.config();
 

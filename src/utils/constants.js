@@ -28,9 +28,13 @@ export const TICKET_CATEGORIES = {
   SOFTWARE: 'software',
   NETWORK: 'network',
   MAINTENANCE: 'maintenance',
+<<<<<<< HEAD
   SECURITY: 'security',
   ACCESS_RIGHTS: 'access-rights',
   OTHER: 'other'
+=======
+  OTHER: 'other',
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 }
 
 /**
@@ -118,9 +122,13 @@ export const TICKET_CATEGORY_NAMES = {
   [TICKET_CATEGORIES.SOFTWARE]: 'Программное обеспечение',
   [TICKET_CATEGORIES.NETWORK]: 'Сеть',
   [TICKET_CATEGORIES.MAINTENANCE]: 'Техническое обслуживание',
+<<<<<<< HEAD
   [TICKET_CATEGORIES.SECURITY]: 'Безопасность',
   [TICKET_CATEGORIES.ACCESS_RIGHTS]: 'Права доступа',
   [TICKET_CATEGORIES.OTHER]: 'Другое'
+=======
+  [TICKET_CATEGORIES.OTHER]: 'Другое',
+>>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 }
 
 /**
