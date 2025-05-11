@@ -1,18 +1,9 @@
-<<<<<<< HEAD
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 const router = express.Router();
-=======
-// server/routes/auth.js
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 
 // Авторизация пользователя
 router.post('/login', async (req, res) => {
@@ -85,8 +76,4 @@ router.get('/me', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
 export default router;
-=======
-module.exports = router;
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb

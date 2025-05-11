@@ -1,17 +1,9 @@
-<<<<<<< HEAD
 import express from 'express';
 import User from '../models/User.js';
 import auth from '../middleware/auth.js';
 import Ticket from '../models/Ticket.js';
 
 const router = express.Router();
-=======
-const express = require('express');
-const router = express.Router();
-const User = require('../models/User');
-const auth = require('../middleware/auth');
-const Ticket = require('../models/Ticket');
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
 
 // Получить всех пользователей (только для админов)
 router.get('/', auth, async (req, res) => {
@@ -32,11 +24,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     // Проверка прав доступа
-<<<<<<< HEAD
     if (req.user.role !== 'admin' && req.user.id.toString() !== req.params.id) {
-=======
-    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.id) {
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
       return res.status(403).json({ message: 'Доступ запрещен' });
     }
 
@@ -55,11 +43,7 @@ router.get('/:id', auth, async (req, res) => {
 router.get('/:id/tickets', auth, async (req, res) => {
   try {
     // Проверка прав доступа
-<<<<<<< HEAD
     if (req.user.role === 'user' && req.user.id.toString() !== req.params.id) {
-=======
-    if (req.user.role === 'user' && req.user._id.toString() !== req.params.id) {
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
       return res.status(403).json({ message: 'Доступ запрещен' });
     }
 
@@ -84,11 +68,7 @@ router.get('/:id/tickets', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     // Проверка прав доступа
-<<<<<<< HEAD
     if (req.user.role !== 'admin' && req.user.id.toString() !== req.params.id) {
-=======
-    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.id) {
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
       return res.status(403).json({ message: 'Доступ запрещен' });
     }
 
@@ -120,8 +100,4 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
 export default router;
-=======
-module.exports = router;
->>>>>>> b8b05b5823c513c118c1f27eaa4c623ce0d255eb
