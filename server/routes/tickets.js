@@ -14,6 +14,7 @@ const router = express.Router();
 // Настройка хранилища для загруженных файлов
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
+    // Создаем директорию, если она не существует
     const dir = path.join(__dirname, '../uploads');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -21,6 +22,7 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: function (req, file, cb) {
+    // Генерируем уникальное имя файла
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
@@ -300,24 +302,38 @@ router.delete('/:id/attachments/:attachmentId', auth, async (req, res) => {
     }
 
     // Найти вложение
-    const attachment = ticket.attachments.id(req.params.attachmentId);
-    if (!attachment) {
+    const attachmentIndex = ticket.attachments.findIndex(
+      att => att._id.toString() === req.params.attachmentId
+    );
+
+    if (attachmentIndex === -1) {
       return res.status(404).json({ message: 'Вложение не найдено' });
     }
 
-    // Удалить файл с диска
+    const attachment = ticket.attachments[attachmentIndex];
+
+    // Удалить файл с диска (с обработкой ошибок)
     if (attachment.path) {
-      fs.unlink(attachment.path, (err) => {
-        if (err) console.error('Ошибка при удалении файла:', err);
-      });
+      try {
+        fs.unlink(attachment.path, (err) => {
+          if (err) {
+            // Логируем ошибку, но продолжаем выполнение
+            console.error('Ошибка при удалении файла:', err);
+          }
+        });
+      } catch (error) {
+        console.error('Ошибка при удалении файла:', error);
+        // Продолжаем выполнение даже при ошибке удаления файла
+      }
     }
 
-    // Удалить вложение из массива
-    attachment.remove();
+    // Удалить вложение из массива (современный способ в Mongoose)
+    ticket.attachments.splice(attachmentIndex, 1);
     await ticket.save();
 
     res.json({ message: 'Вложение удалено' });
   } catch (err) {
+    console.error('Ошибка удаления вложения:', err);
     res.status(500).json({ message: err.message });
   }
 });
