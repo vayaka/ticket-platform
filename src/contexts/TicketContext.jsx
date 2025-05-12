@@ -1,3 +1,4 @@
+// src/contexts/TicketContext.jsx
 import { createContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ticketService from '../services/ticketService'
 
@@ -32,6 +33,20 @@ export const TicketProvider = ({ children }) => {
     activeRequests.current.clear()
   }, [])
 
+  // ДОБАВЛЯЕМ ФУНКЦИЮ normalizeId
+  // Нормализация ID для совместимости с MongoDB
+  const normalizeId = useCallback((obj) => {
+    if (!obj) return null
+    return obj._id ? { ...obj, id: obj._id } : obj
+  }, [])
+
+  // Нормализация массива заявок
+  const normalizeTickets = useCallback((ticketsArray) => {
+    if (!ticketsArray || !Array.isArray(ticketsArray)) return []
+
+    return ticketsArray.map(ticket => normalizeId(ticket))
+  }, [normalizeId])
+
   // Применение фильтров
   const applyFilters = useCallback((ticketsArray, filterOptions) => {
     let filtered = [...ticketsArray]
@@ -54,13 +69,15 @@ export const TicketProvider = ({ children }) => {
 
     if (filterOptions.assignedTo) {
       filtered = filtered.filter(ticket =>
-        ticket.assignedTo && ticket.assignedTo.id === filterOptions.assignedTo
+        ticket.assignedTo && (ticket.assignedTo.id === filterOptions.assignedTo ||
+        ticket.assignedTo._id === filterOptions.assignedTo)
       )
     }
 
     if (filterOptions.createdBy) {
       filtered = filtered.filter(ticket =>
-        ticket.createdBy && ticket.createdBy.id === filterOptions.createdBy
+        ticket.createdBy && (ticket.createdBy.id === filterOptions.createdBy ||
+        ticket.createdBy._id === filterOptions.createdBy)
       )
     }
 
@@ -70,8 +87,8 @@ export const TicketProvider = ({ children }) => {
         ticket =>
           ticket.title.toLowerCase().includes(searchLower) ||
           ticket.description.toLowerCase().includes(searchLower) ||
-          (ticket.assignedTo && ticket.assignedTo.name.toLowerCase().includes(searchLower)) ||
-          (ticket.createdBy && ticket.createdBy.name.toLowerCase().includes(searchLower))
+          (ticket.assignedTo && ticket.assignedTo.name?.toLowerCase().includes(searchLower)) ||
+          (ticket.createdBy && ticket.createdBy.name?.toLowerCase().includes(searchLower))
       )
     }
 
@@ -109,13 +126,16 @@ export const TicketProvider = ({ children }) => {
       const data = await ticketService.getAllTickets({ signal: controller.signal })
 
       if (!controller.signal.aborted) {
-        setTickets(data)
-        applyFilters(data, filters)
+        // Нормализуем данные заявок
+        const normalizedTickets = normalizeTickets(data)
+        setTickets(normalizedTickets)
+        applyFilters(normalizedTickets, filters)
         lastFetchTime.current = now
         isFirstLoad.current = false
       }
     } catch (err) {
       if (!controller.signal.aborted) {
+        console.error('Ошибка загрузки заявок:', err)
         setError(err.message || 'Ошибка загрузки заявок')
       }
     } finally {
@@ -124,36 +144,25 @@ export const TicketProvider = ({ children }) => {
       }
       activeRequests.current.delete('fetchTickets')
     }
-  }, [tickets.length, filters, applyFilters])
-
-  // Создание новой заявки
-  const createTicket = useCallback(async (ticketData) => {
-    try {
-      setLoading(true)
-      setError(null)
-      const newTicket = await ticketService.createTicket(ticketData)
-
-      // Обновляем локальное состояние для быстрого отображения
-      setTickets(prev => [newTicket, ...prev])
-      applyFilters([newTicket, ...tickets], filters)
-
-      // Перезагружаем данные с сервера для синхронизации
-      await fetchTickets(true)
-
-      return newTicket
-    } catch (err) {
-      setError(err.message || 'Ошибка создания заявки')
-      throw err
-    } finally {
-      setLoading(false)
-    }
-  }, [tickets, filters, applyFilters, fetchTickets])
+  }, [tickets.length, filters, applyFilters, normalizeTickets])
 
   // Получение заявки по ID с кешированием
   const getTicketById = useCallback(async (id) => {
+    if (!id) {
+      console.error('ID заявки не указан')
+      return null
+    }
+
     // Сначала проверяем кеш
-    const cachedTicket = tickets.find(t => t.id === id || t.id === parseInt(id))
+    const cachedTicket = tickets.find(t =>
+      t.id === id ||
+      t.id === parseInt(id) ||
+      t._id === id ||
+      t._id === parseInt(id)
+    )
+
     if (cachedTicket) {
+      console.log('Возврат закешированной заявки:', cachedTicket)
       return cachedTicket
     }
 
@@ -169,22 +178,69 @@ export const TicketProvider = ({ children }) => {
     try {
       setLoading(true)
       setError(null)
-      const ticket = await ticketService.getTicketById(id, { signal: controller.signal })
+
+      // Сохраняем ID в нескольких форматах для надежности
+      const stringId = String(id).trim()
+      const numericId = parseInt(stringId, 10)
+
+      // Создаем массив попыток с разными форматами ID
+      const attempts = [
+        () => ticketService.getTicketById(stringId, { signal: controller.signal }),
+        () => ticketService.getTicketById(numericId, { signal: controller.signal }),
+        () => ticketService.getTicketById(stringId.replace(/"/g, ''), { signal: controller.signal })
+      ]
+
+      // Перебираем попытки, пока не получим успешный результат
+      let ticket = null
+      let lastError = null
+
+      for (const attempt of attempts) {
+        if (controller.signal.aborted) break
+
+        try {
+          ticket = await attempt()
+          if (ticket) break
+        } catch (err) {
+          lastError = err
+          console.warn(`Попытка получения заявки не удалась: ${err.message}`)
+        }
+      }
+
+      // Если после всех попыток нет результата, выбрасываем ошибку
+      if (!ticket) {
+        throw lastError || new Error(`Не удалось найти заявку с ID ${id}`)
+      }
 
       if (!controller.signal.aborted) {
+        // Нормализуем полученную заявку
+        const normalizedTicket = normalizeId(ticket)
+
         // Обновляем кеш
         setTickets(prev => {
-          const exists = prev.find(t => t.id === ticket.id)
+          const exists = prev.find(t =>
+            t.id === normalizedTicket.id ||
+            t._id === normalizedTicket.id ||
+            t.id === normalizedTicket._id ||
+            t._id === normalizedTicket._id
+          )
+
           if (exists) {
-            return prev.map(t => t.id === ticket.id ? ticket : t)
+            return prev.map(t =>
+              (t.id === normalizedTicket.id ||
+               t._id === normalizedTicket.id ||
+               t.id === normalizedTicket._id ||
+               t._id === normalizedTicket._id) ? normalizedTicket : t
+            )
           }
-          return [ticket, ...prev]
+
+          return [normalizedTicket, ...prev]
         })
 
-        return ticket
+        return normalizedTicket
       }
     } catch (err) {
       if (!controller.signal.aborted) {
+        console.error(`Ошибка получения заявки ${id}:`, err)
         setError(err.message || 'Ошибка получения заявки')
       }
       throw err
@@ -194,7 +250,34 @@ export const TicketProvider = ({ children }) => {
       }
       activeRequests.current.delete(requestKey)
     }
-  }, [tickets])
+  }, [tickets, normalizeId])
+
+  // Создание новой заявки
+  const createTicket = useCallback(async (ticketData) => {
+    try {
+      setLoading(true)
+      setError(null)
+      const newTicket = await ticketService.createTicket(ticketData)
+
+      // Нормализуем полученную заявку
+      const normalizedTicket = normalizeId(newTicket)
+
+      // Обновляем локальное состояние для быстрого отображения
+      setTickets(prev => [normalizedTicket, ...prev])
+      applyFilters([normalizedTicket, ...tickets], filters)
+
+      // Перезагружаем данные с сервера для синхронизации
+      await fetchTickets(true)
+
+      return normalizedTicket
+    } catch (err) {
+      console.error('Ошибка создания заявки:', err)
+      setError(err.message || 'Ошибка создания заявки')
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [tickets, filters, applyFilters, fetchTickets, normalizeId])
 
   // Обновление заявки
   const updateTicket = useCallback(async (id, ticketData) => {
@@ -203,20 +286,38 @@ export const TicketProvider = ({ children }) => {
       setError(null)
       const updatedTicket = await ticketService.updateTicket(id, ticketData)
 
+      // Нормализуем полученную заявку
+      const normalizedTicket = normalizeId(updatedTicket)
+
       // Обновляем локальное состояние
       setTickets(prev =>
-        prev.map(ticket => ticket.id === id ? updatedTicket : ticket)
+        prev.map(ticket =>
+          (ticket.id === id ||
+           ticket._id === id ||
+           ticket.id === normalizedTicket.id ||
+           ticket._id === normalizedTicket.id) ? normalizedTicket : ticket
+        )
       )
-      applyFilters(tickets.map(ticket => ticket.id === id ? updatedTicket : ticket), filters)
 
-      return updatedTicket
+      // Применяем фильтры к обновленным данным
+      const updatedTickets = tickets.map(ticket =>
+        (ticket.id === id ||
+         ticket._id === id ||
+         ticket.id === normalizedTicket.id ||
+         ticket._id === normalizedTicket.id) ? normalizedTicket : ticket
+      )
+
+      applyFilters(updatedTickets, filters)
+
+      return normalizedTicket
     } catch (err) {
+      console.error(`Ошибка обновления заявки ${id}:`, err)
       setError(err.message || 'Ошибка обновления заявки')
       throw err
     } finally {
       setLoading(false)
     }
-  }, [tickets, filters, applyFilters])
+  }, [tickets, filters, applyFilters, normalizeId])
 
   // Удаление заявки
   const deleteTicket = useCallback(async (id) => {
@@ -225,10 +326,18 @@ export const TicketProvider = ({ children }) => {
       setError(null)
       await ticketService.deleteTicket(id)
 
-      const updatedTickets = tickets.filter(ticket => ticket.id !== id)
+      // Удаляем заявку из локального состояния
+      const updatedTickets = tickets.filter(ticket =>
+        ticket.id !== id &&
+        ticket._id !== id
+      )
+
       setTickets(updatedTickets)
       applyFilters(updatedTickets, filters)
+
+      return true
     } catch (err) {
+      console.error(`Ошибка удаления заявки ${id}:`, err)
       setError(err.message || 'Ошибка удаления заявки')
       throw err
     } finally {
@@ -243,27 +352,32 @@ export const TicketProvider = ({ children }) => {
       setError(null)
 
       const comment = await ticketService.addComment(ticketId, text)
+      // Нормализуем комментарий
+      const normalizedComment = normalizeId(comment)
 
       // Обновляем локальное состояние
       setTickets(prev => prev.map(ticket => {
-        if (ticket.id === ticketId || ticket.id === parseInt(ticketId)) {
+        if (ticket.id === ticketId ||
+            ticket._id === ticketId ||
+            ticket.id === parseInt(ticketId)) {
           return {
             ...ticket,
-            comments: [...(ticket.comments || []), comment],
+            comments: [...(ticket.comments || []), normalizedComment],
             updatedAt: new Date().toISOString()
           }
         }
         return ticket
       }))
 
-      return comment
+      return normalizedComment
     } catch (err) {
+      console.error(`Ошибка добавления комментария к заявке ${ticketId}:`, err)
       setError(err.message || 'Ошибка добавления комментария')
       throw err
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [normalizeId])
 
   // Изменение статуса
   const changeStatus = useCallback(async (ticketId, status, comment = '') => {
@@ -273,58 +387,113 @@ export const TicketProvider = ({ children }) => {
 
       const updatedTicket = await ticketService.changeStatus(ticketId, status, comment)
 
+      // Нормализуем полученную заявку
+      const normalizedTicket = normalizeId(updatedTicket)
+
       // Обновляем локальное состояние
       setTickets(prev => prev.map(t =>
-        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+        (t.id === ticketId ||
+         t._id === ticketId ||
+         t.id === parseInt(ticketId)) ? normalizedTicket : t
       ))
 
       // Применяем фильтры к обновленному списку
-      applyFilters(tickets.map(t =>
-        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
-      ), filters)
+      const updatedTickets = tickets.map(t =>
+        (t.id === ticketId ||
+         t._id === ticketId ||
+         t.id === parseInt(ticketId)) ? normalizedTicket : t
+      )
 
-      return updatedTicket
+      applyFilters(updatedTickets, filters)
+
+      return normalizedTicket
     } catch (err) {
+      console.error(`Ошибка изменения статуса заявки ${ticketId}:`, err)
       setError(err.message || 'Ошибка изменения статуса')
       throw err
     } finally {
       setLoading(false)
     }
-  }, [tickets, filters, applyFilters])
+  }, [tickets, filters, applyFilters, normalizeId])
 
   // Назначение исполнителя
-  const assignTicket = useCallback(async (ticketId, userId, userName) => {
+  const assignTicket = useCallback(async (ticketId, userId) => {
     try {
       setLoading(true)
       setError(null)
 
       const updatedTicket = await ticketService.assignTicket(ticketId, userId)
 
+      // Нормализуем полученную заявку
+      const normalizedTicket = normalizeId(updatedTicket)
+
       // Обновляем локальное состояние
       setTickets(prev => prev.map(t =>
-        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
+        (t.id === ticketId ||
+         t._id === ticketId ||
+         t.id === parseInt(ticketId)) ? normalizedTicket : t
       ))
 
       // Применяем фильтры к обновленному списку
-      applyFilters(tickets.map(t =>
-        t.id === ticketId || t.id === parseInt(ticketId) ? updatedTicket : t
-      ), filters)
+      const updatedTickets = tickets.map(t =>
+        (t.id === ticketId ||
+         t._id === ticketId ||
+         t.id === parseInt(ticketId)) ? normalizedTicket : t
+      )
 
-      return updatedTicket
+      applyFilters(updatedTickets, filters)
+
+      return normalizedTicket
     } catch (err) {
+      console.error(`Ошибка назначения исполнителя для заявки ${ticketId}:`, err)
       setError(err.message || 'Ошибка назначения исполнителя')
       throw err
     } finally {
       setLoading(false)
     }
-  }, [tickets, filters, applyFilters])
+  }, [tickets, filters, applyFilters, normalizeId])
+
+  // Удаление вложения
+  const deleteAttachment = useCallback(async (ticketId, attachmentId) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      await ticketService.deleteAttachment(ticketId, attachmentId)
+
+      // Обновляем локальное состояние
+      setTickets(prev => prev.map(ticket => {
+        if (ticket.id === ticketId ||
+            ticket._id === ticketId ||
+            ticket.id === parseInt(ticketId)) {
+          return {
+            ...ticket,
+            attachments: ticket.attachments.filter(a =>
+              a.id !== attachmentId &&
+              a._id !== attachmentId
+            )
+          }
+        }
+        return ticket
+      }))
+
+      return true
+    } catch (err) {
+      console.error(`Ошибка удаления вложения ${attachmentId} из заявки ${ticketId}:`, err)
+      setError(err.message || 'Ошибка удаления вложения')
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   // Загружаем заявки при первом рендере
   useEffect(() => {
     if (isFirstLoad.current) {
       fetchTickets()
     }
-  }, [fetchTickets])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cleanup функция
   useEffect(() => {
@@ -332,6 +501,11 @@ export const TicketProvider = ({ children }) => {
       cancelActiveRequests()
     }
   }, [cancelActiveRequests])
+
+  // Очистка ошибки
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   // Мемоизируем значение контекста
   const value = useMemo(() => ({
@@ -349,6 +523,8 @@ export const TicketProvider = ({ children }) => {
     addComment,
     changeStatus,
     assignTicket,
+    deleteAttachment,
+    clearError
   }), [
     filteredTickets,
     tickets,
@@ -363,7 +539,9 @@ export const TicketProvider = ({ children }) => {
     deleteTicket,
     addComment,
     changeStatus,
-    assignTicket
+    assignTicket,
+    deleteAttachment,
+    clearError
   ])
 
   return <TicketContext.Provider value={value}>{children}</TicketContext.Provider>

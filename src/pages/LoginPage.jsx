@@ -1,6 +1,7 @@
-import { useState, useContext } from 'react'
-import { Form, Button, Alert } from 'react-bootstrap'
-import { useNavigate } from 'react-router-dom'
+// src/pages/LoginPage.jsx
+import { useState, useContext, useEffect } from 'react'
+import { Form, Button, Alert, Spinner } from 'react-bootstrap'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { AuthContext } from '../contexts/AuthContext'
 import { Formik } from 'formik'
 import * as Yup from 'yup'
@@ -17,8 +18,35 @@ const validationSchema = Yup.object().shape({
 
 const LoginPage = () => {
   const navigate = useNavigate()
-  const { login } = useContext(AuthContext)
+  const location = useLocation()
+  const { login, error: contextError, clearError, isAuthenticated } = useContext(AuthContext)
   const [error, setError] = useState(null)
+  const [redirectMessage, setRedirectMessage] = useState('')
+
+  // Если пользователь уже авторизован, перенаправляем на главную
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/')
+    }
+
+    // Проверяем, есть ли redirected=true в поисковых параметрах URL
+    const params = new URLSearchParams(location.search)
+    if (params.get('redirected') === 'true') {
+      setRedirectMessage('Для доступа к этой странице необходимо войти в систему')
+    }
+
+    // При размонтировании компонента очищаем ошибки
+    return () => {
+      if (clearError) clearError()
+    }
+  }, [isAuthenticated, navigate, location.search, clearError])
+
+  // Используем ошибку из контекста, если она есть
+  useEffect(() => {
+    if (contextError) {
+      setError(contextError)
+    }
+  }, [contextError])
 
   // Начальные значения формы
   const initialValues = {
@@ -30,9 +58,22 @@ const LoginPage = () => {
   const handleSubmit = async (values, { setSubmitting }) => {
     try {
       setError(null)
+
+      // Вызываем функцию входа
       await login(values.email, values.password)
-      navigate('/')
+
+      // После успешного входа проверяем, есть ли сохраненный путь для редиректа
+      const redirectPath = localStorage.getItem('redirectAfterLogin')
+
+      if (redirectPath) {
+        localStorage.removeItem('redirectAfterLogin')
+        navigate(redirectPath)
+      } else {
+        // Иначе перенаправляем на главную
+        navigate('/')
+      }
     } catch (err) {
+      console.error('Ошибка авторизации:', err)
       setError(err.message || 'Произошла ошибка при авторизации')
     } finally {
       setSubmitting(false)
@@ -43,7 +84,17 @@ const LoginPage = () => {
     <div>
       <h4 className="text-center mb-4">Вход в систему</h4>
 
-      {error && <Alert variant="danger">{error}</Alert>}
+      {redirectMessage && (
+        <Alert variant="info" className="mb-4">
+          {redirectMessage}
+        </Alert>
+      )}
+
+      {error && (
+        <Alert variant="danger" onClose={() => setError(null)} dismissible>
+          {error}
+        </Alert>
+      )}
 
       <Formik
         initialValues={initialValues}
@@ -70,6 +121,7 @@ const LoginPage = () => {
                 onChange={handleChange}
                 onBlur={handleBlur}
                 isInvalid={touched.email && !!errors.email}
+                disabled={isSubmitting}
               />
               <Form.Control.Feedback type="invalid">
                 {errors.email}
@@ -86,6 +138,7 @@ const LoginPage = () => {
                 onChange={handleChange}
                 onBlur={handleBlur}
                 isInvalid={touched.password && !!errors.password}
+                disabled={isSubmitting}
               />
               <Form.Control.Feedback type="invalid">
                 {errors.password}
@@ -98,7 +151,12 @@ const LoginPage = () => {
                 type="submit"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? 'Вход...' : 'Войти'}
+                {isSubmitting ? (
+                  <>
+                    <Spinner as="span" animation="border" size="sm" className="me-2" />
+                    Вход...
+                  </>
+                ) : 'Войти'}
               </Button>
             </div>
 

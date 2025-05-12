@@ -60,7 +60,7 @@ const TicketForm = () => {
       resetForm()
       setSelectedFile(null)
 
-      // Проверяем наличие ID в ответе (MongoDB может вернуть _id)
+      // Получаем ID из ответа (может быть id или _id)
       const ticketId = newTicket.id || newTicket._id
 
       if (ticketId) {

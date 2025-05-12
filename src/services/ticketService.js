@@ -33,22 +33,76 @@ const ticketService = {
   },
 
   /**
-   * Получение заявки по ID
-   * @param {number|string} id
-   * @param {Object} options - Опции запроса
-   * @returns {Promise<Object>}
-   */
+ * Получение заявки по ID
+ * @param {number|string} id
+ * @param {Object} options - Опции запроса
+ * @returns {Promise<Object>}
+ */
   getTicketById: async (id, options = {}) => {
     try {
-      // Нормализуем ID
-      const normalizedId = String(id).trim();
-      const response = await api.get(`/tickets/${normalizedId}`, options);
+      if (!id) {
+        throw new Error('ID заявки не указан');
+      }
+
+      // Нормализуем ID - убираем лишние символы и пробелы
+      const normalizedId = String(id).trim().replace(/"/g, '');
+      console.log('ticketService.getTicketById normalized ID:', normalizedId);
+
+      // Добавляем ретрай для надежности
+      let response = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError = null;
+
+      while (attempts < maxAttempts) {
+        try {
+          // Делаем запрос
+          response = await api.get(`/tickets/${normalizedId}`, options);
+          break; // Если успешно, выходим из цикла
+        } catch (error) {
+          lastError = error;
+          console.warn(`Попытка ${attempts + 1}/${maxAttempts} загрузки заявки не удалась:`, error);
+
+          // Проверяем, стоит ли повторять запрос
+          if (error.status === 404 || attempts >= maxAttempts - 1) {
+            // Если 404 или последняя попытка, не повторяем
+            break;
+          }
+
+          // Экспоненциальная задержка перед повтором
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+          attempts++;
+        }
+      }
+
+      if (!response) {
+        // Если у нас 404, генерируем специфическую ошибку
+        if (lastError && lastError.status === 404) {
+          throw new Error(`Заявка с ID ${normalizedId} не найдена`);
+        }
+        // Иначе выбрасываем последнюю ошибку или общую ошибку
+        throw lastError || new Error(`Не удалось получить заявку с ID ${normalizedId}`);
+      }
+
+      // Проверяем, что получили данные
+      if (!response) {
+        console.warn('ticketService.getTicketById: пустой ответ от API');
+        return null;
+      }
+
+      console.log('ticketService.getTicketById result:', response);
       return response;
     } catch (error) {
       console.error(`Ошибка получения заявки ${id}:`, error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        response: error.response,
+        config: error.config
+      });
       throw error;
     }
-  },
+},
 
   /**
    * Создание новой заявки

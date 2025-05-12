@@ -1,15 +1,19 @@
+// src/components/tickets/TicketList.jsx
 import { useState, useContext, useEffect } from 'react'
-import { Card, Table, Badge, Button, Form, Row, Col, InputGroup } from 'react-bootstrap'
+import { Card, Table, Badge, Button, Form, Row, Col, InputGroup, Alert, Spinner } from 'react-bootstrap'
 import { Link } from 'react-router-dom'
-import { FaSearch, FaFilter, FaSort, FaEye } from 'react-icons/fa'
+import { FaSearch, FaFilter, FaSort, FaEye, FaTimes, FaSpinner } from 'react-icons/fa'
 import { TicketContext } from '../../contexts/TicketContext'
+import { AuthContext } from '../../contexts/AuthContext'
 import Loader from '../common/Loader'
 import TicketCard from './TicketCard'
 
 const TicketList = () => {
-  const { tickets, loading, error, updateFilters, filters } = useContext(TicketContext)
+  const { tickets, loading, error, updateFilters, filters, fetchTickets } = useContext(TicketContext)
+  const { user } = useContext(AuthContext)
   const [viewMode, setViewMode] = useState(localStorage.getItem('ticketViewMode') || 'table')
   const [localFilters, setLocalFilters] = useState(filters)
+  const [applying, setApplying] = useState(false)
 
   // Обновляем локальное состояние при изменении фильтров в контексте
   useEffect(() => {
@@ -22,20 +26,36 @@ const TicketList = () => {
   }, [viewMode])
 
   // Применение фильтров
-  const applyFilters = () => {
-    updateFilters(localFilters)
+  const applyFilters = async () => {
+    try {
+      setApplying(true)
+      await updateFilters(localFilters)
+    } catch (error) {
+      console.error('Ошибка при применении фильтров:', error)
+    } finally {
+      setApplying(false)
+    }
   }
 
   // Сброс фильтров
-  const resetFilters = () => {
+  const resetFilters = async () => {
     const resetFilters = {
       status: '',
       priority: '',
       department: '',
+      category: '',
       search: '',
     }
     setLocalFilters(resetFilters)
-    updateFilters(resetFilters)
+
+    try {
+      setApplying(true)
+      await updateFilters(resetFilters)
+    } catch (error) {
+      console.error('Ошибка при сбросе фильтров:', error)
+    } finally {
+      setApplying(false)
+    }
   }
 
   // Обработка изменения фильтров
@@ -45,6 +65,28 @@ const TicketList = () => {
       ...prev,
       [name]: value
     }))
+  }
+
+  // Обработка события Enter в поле поиска
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      applyFilters()
+    }
+  }
+
+  // Функция для обновления списка заявок
+  const refreshTickets = async () => {
+    try {
+      await fetchTickets(true) // true - принудительное обновление
+    } catch (error) {
+      console.error('Ошибка при обновлении списка заявок:', error)
+    }
+  }
+
+  // Нормализация ID для совместимости с MongoDB
+  const normalizeId = (obj) => {
+    if (!obj) return null
+    return obj._id ? { ...obj, id: obj._id } : obj
   }
 
   // Получаем цвет для статуса заявки
@@ -133,13 +175,15 @@ const TicketList = () => {
         return 'ПО'
       case 'network':
         return 'Сеть'
+      case 'maintenance':
+        return 'Тех. обслуживание'
       default:
         return 'Другое'
     }
   }
 
-  if (loading) {
-    return <Loader />
+  if (loading && tickets.length === 0) {
+    return <Loader fullPage />
   }
 
   return (
@@ -157,15 +201,33 @@ const TicketList = () => {
               size="sm"
               className="me-2"
               onClick={resetFilters}
+              disabled={applying}
             >
-              Сбросить
+              <FaTimes className="me-1" /> Сбросить
             </Button>
             <Button
               variant="primary"
               size="sm"
               onClick={applyFilters}
+              disabled={applying}
             >
-              Применить
+              {applying ? (
+                <>
+                  <Spinner
+                    as="span"
+                    animation="border"
+                    size="sm"
+                    role="status"
+                    aria-hidden="true"
+                    className="me-1"
+                  />
+                  Применяем...
+                </>
+              ) : (
+                <>
+                  <FaFilter className="me-1" /> Применить
+                </>
+              )}
             </Button>
           </div>
         </Card.Header>
@@ -221,6 +283,25 @@ const TicketList = () => {
             </Col>
             <Col md={6} lg={3} className="mb-3">
               <Form.Group>
+                <Form.Label>Категория</Form.Label>
+                <Form.Select
+                  name="category"
+                  value={localFilters.category}
+                  onChange={handleFilterChange}
+                >
+                  <option value="">Все категории</option>
+                  <option value="hardware">Оборудование</option>
+                  <option value="software">Программное обеспечение</option>
+                  <option value="network">Сеть</option>
+                  <option value="maintenance">Тех. обслуживание</option>
+                  <option value="other">Другое</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
+          </Row>
+          <Row>
+            <Col md={12} className="mb-3">
+              <Form.Group>
                 <Form.Label>Поиск</Form.Label>
                 <InputGroup>
                   <Form.Control
@@ -230,10 +311,10 @@ const TicketList = () => {
                     onChange={handleFilterChange}
                     placeholder="Поиск по заявкам..."
                   />
-                  <Button variant="outline-secondary">
-                    <FaSearch />
-                  </Button>
                 </InputGroup>
+                <Form.Text className="text-muted">
+                  Поиск по названию, описанию и другим полям заявки
+                </Form.Text>
               </Form.Group>
             </Col>
           </Row>
@@ -243,9 +324,20 @@ const TicketList = () => {
       {/* Блок с результатами */}
       <Card className="shadow-sm">
         <Card.Header className="bg-light d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">
-            Найдено заявок: {tickets.length}
-          </h5>
+          <div className="d-flex align-items-center">
+            <h5 className="mb-0 me-3">
+              Найдено заявок: {tickets.length}
+            </h5>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={refreshTickets}
+              disabled={loading}
+              title="Обновить список"
+            >
+              {loading ? <FaSpinner className="fa-spin" /> : <FaSort />}
+            </Button>
+          </div>
           <div className="btn-group">
             <Button
               variant={viewMode === 'table' ? 'primary' : 'outline-primary'}
@@ -263,9 +355,10 @@ const TicketList = () => {
         </Card.Header>
         <Card.Body>
           {error && (
-            <div className="alert alert-danger" role="alert">
-              {error}
-            </div>
+            <Alert variant="danger" dismissible>
+              <Alert.Heading>Ошибка</Alert.Heading>
+              <p>{error}</p>
+            </Alert>
           )}
 
           {tickets.length === 0 ? (
@@ -287,15 +380,16 @@ const TicketList = () => {
                     <th>Приоритет</th>
                     <th>Отдел</th>
                     <th>Создана</th>
-                    <th>Дедлайн</th>
                     <th>Действия</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tickets.map((ticket) => (
-                    <tr key={ticket.id} className={`priority-${ticket.priority}`}>
-                      <td>#{ticket.id}</td>
-                      <td>{ticket.title}</td>
+                    <tr key={ticket.id || ticket._id} className={`priority-${ticket.priority}`}>
+                      <td>#{ticket.id || ticket._id}</td>
+                      <td className="text-truncate" style={{ maxWidth: '200px' }} title={ticket.title}>
+                        {ticket.title}
+                      </td>
                       <td>
                         <Badge bg={getStatusVariant(ticket.status)}>
                           {getStatusName(ticket.status)}
@@ -308,10 +402,9 @@ const TicketList = () => {
                       </td>
                       <td>{ticket.department}</td>
                       <td>{formatDate(ticket.createdAt)}</td>
-                      <td>{formatDate(ticket.dueDate)}</td>
                       <td>
                         <Link
-                          to={`/tickets/${ticket.id}`}
+                          to={`/tickets/${ticket.id || ticket._id}`}
                           className="btn btn-sm btn-outline-primary"
                         >
                           <FaEye className="me-1" /> Просмотр
@@ -325,9 +418,9 @@ const TicketList = () => {
           ) : (
             <Row>
               {tickets.map((ticket) => (
-                <Col key={ticket.id} xs={12} md={6} lg={4} className="mb-4">
+                <Col key={ticket.id || ticket._id} xs={12} md={6} lg={4} className="mb-4">
                   <TicketCard
-                    ticket={ticket}
+                    ticket={normalizeId(ticket)}
                     getStatusName={getStatusName}
                     getPriorityName={getPriorityName}
                     getCategoryName={getCategoryName}
@@ -340,6 +433,19 @@ const TicketList = () => {
             </Row>
           )}
         </Card.Body>
+        {tickets.length > 0 && (
+          <Card.Footer className="bg-light">
+            <Row className="align-items-center">
+              <Col>
+                <small className="text-muted">
+                  {user?.role === 'admin' || user?.role === 'moderator'
+                    ? 'Отображаются все заявки в системе'
+                    : 'Отображаются заявки, созданные вами или назначенные вам'}
+                </small>
+              </Col>
+            </Row>
+          </Card.Footer>
+        )}
       </Card>
     </div>
   )
